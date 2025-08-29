@@ -1,8 +1,9 @@
-#You are hired by an influencer agency to build the software.
+**You are hired by an influencer agency to build the software.**
+
 The main problem: the agency cannot quickly pick the right creators or split budget smartly. Everything runs on spreadsheets, inboxes, and manual judgment. It is slow, inconsistent, and hard to scale.
 Therefore this software will solve the problem by automating KOL selection, safety checks, outreach, and budget allocation end to end, with a simple dashboard and a few clear APIs.
 
-What is a KOL
+**What is a KOL**
 KOL means Key Opinion Leader. It is another term for creator or influencer with an audience that trusts their recommendations. Brands collaborate with KOLs to drive awareness, clicks, and sales.
 Examples
 https://www.tiktok.com/@porji_56
@@ -31,7 +32,7 @@ Mega 1M plus. Celebrity scale.
 
 
 
-How agencies work today
+**How agencies work today**
 Client brief. Example: “We need Beauty KOLs. We want university student to first jobber living in city. Budget X.”
 
 
@@ -52,10 +53,10 @@ Managing. Chatting with creators on personal accounts or a shared brand account 
 
 Result: slow decisions, subjective picks, wasted budget, and safety blind spots.
 
-Your Mission — build KOL Automation
+**Your Mission — build KOL Automation**
 Important PoC note for 1 to 4
  This assignment is Proof of Concept level. You do not have to test with real people. Your job is to convince us that, if you wanted to, you could launch it and it would work.
-1) PoC: Discover KOLs at scale
+**1) PoC: Discover KOLs at scale**
 Goal: the system can automatically find and store new unique KOLs at scale. Aim for about 1,000 per day or as many as you reasonably can.
 Any approach no matter how unorthodox is acceptable. Public pages, creator marketplaces, third-party lists, CSV uploads.
 
@@ -66,7 +67,7 @@ Show what fields you can capture. Examples: handle, platform, category, follower
 Deliverable: a growing, deduplicated KOL directory you can search and filter.
 
 
-2) PoC: Match KOLs to a client brief
+**2) PoC: Match KOLs to a client brief**
 Goal: given a simple brief, the system returns a shortlist with plain-language reasons.
 Good news, we will give you pre-scraped screenshots to speed you up. Use them to bootstrap. Prove that your pipeline could plug in real sources from 1 later.
 
@@ -99,7 +100,7 @@ Use any reasonable signals. Images, Posts, Keywords, tags, profile hints, captio
 Deliverable: a page or endpoint that accepts a brief as input and shows matching KOLs as output.
 
 
-3) PoC: Outreach and negotiation flow
+**3) PoC: Outreach and negotiation flow**
 Goal: handle the conversation from first reach to confirmation inside your app.
 3.1 First reach out. KOL is on TikTok. Show a realistic approach to reach them such as DM, email in bio, form link.
 
@@ -116,7 +117,7 @@ Provide ready-to-use message templates. Opening, offer, polite follow-up, and fi
 Deliverable: a simple mini-CRM view of conversations per KOL with templated messages and status such as Contacted, Negotiating, Confirmed.
 
 
-4) PoC: Budget Optimizer
+**4) PoC: Budget Optimizer**
 Goal: collect rate cards, then let a client play with a budget and see a suggested plan.
 What is a rate card. A KOL’s price list and conditions such as price per video or live, usage rights, exclusivity, rush fee, deliverables, lead time, and payment terms.
 
@@ -133,7 +134,7 @@ Keep the logic simple and believable. A greedy or rule-based allocator is fine a
 Deliverable: an interactive page with inputs and an Export Plan button for CSV or PDF. Note that We’re not prescribing the exact Optimzation Strategy or UI or logic, the fun part is seeing your creativity.  You’re free to add anything you think is cool or insightful. Anything that demonstrates clear thinking and creativity is acceptable.
 
 
-#Technical skills you’ll demonstrate
+**Technical skills you’ll demonstrate**
 Backend & Data
 FastAPI (or others framework) design (auth, pagination, validation with Pydantic)
 
@@ -167,6 +168,6 @@ Docker and Docker Compose (api/ui/db/redis/worker), env management
 Cloud deploy (Cloud Run/Fly.io/Firebase Hosting or other tools), logs & basic observability
 
 Please feel free to join the repository to contribute to the project. AI-assisted workflows are encouraged.
-Github Repository: https://github.com/IM-IMPOWER/influencer_impower_interview
+**Github Repository: https://github.com/IM-IMPOWER/influencer_impower_interview**
 
 
