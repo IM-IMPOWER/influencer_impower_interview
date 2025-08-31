@@ -1,6 +1,6 @@
 fastapi==0.110.0
 uvicorn[standard]==0.27.1
-psycopg2-binary==2.9.9     # Postgres driver
+psycopg[binary] ==3.2.9     # Postgres driver
 sqlalchemy==2.0.25         # ORM
 alembic==1.13.1            # DB migrations
 pydantic==2.5.3            # Data validation
@@ -8,3 +8,4 @@ python-dotenv==1.0.1       # Load env vars
 requests==2.31.0           # Optional HTTP calls
 openai==1.13.3
 pgvector==0.2.3
+python-multipart

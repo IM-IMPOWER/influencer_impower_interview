@@ -1,17 +1,20 @@
 from fastapi import FastAPI
+from routes_kols import router as kols_router
 
-app = FastAPI()
+app = FastAPI(title="Influencer PoC API")
+
+app.include_router(kols_router)
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.get("/kols")
-def list_kols():
-    return [
-        {"handle": "@anahpfai", "platform": "tik_tok", "followers": 120000, "categories": ["beauty"]},
-        {"handle": "@ice_supathanes3", "platform": "tik_tok", "followers": 87000, "categories": ["food", "condo_cooking"]}
-    ]
+# @app.get("/kols")
+# def list_kols():
+#     return [
+#         {"handle": "@anahpfai", "platform": "tik_tok", "followers": 120000, "categories": ["beauty"]},
+#         {"handle": "@ice_supathanes3", "platform": "tik_tok", "followers": 87000, "categories": ["food", "condo_cooking"]}
+#     ]
 
 @app.post("/match")
 def match_brief(brief: dict):
