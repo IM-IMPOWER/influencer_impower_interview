@@ -2,6 +2,9 @@ FROM python:3.11-slim
 
 # Install system deps
 RUN apt-get update && apt-get install -y build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+# Install git so pip can fetch packages from GitHub
+RUN apt-get update && apt-get install -y git && rm -rf /var/lib/apt/lists/*
+
 
 WORKDIR /app
 COPY requirements.txt .

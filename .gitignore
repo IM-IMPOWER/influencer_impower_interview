@@ -16,3 +16,7 @@ db_data/
 # OS
 .DS_Store
 Thumbs.db
+
+#images
+data/
+*.png
