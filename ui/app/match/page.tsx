@@ -69,6 +69,9 @@ export default function MatchPage() {
               <a className="text-blue-600 underline text-sm" href={h.profile_url} target="_blank" rel="noreferrer">
                 View profile →
               </a>
+              <a href={`/crm?kol_id=${h.id}`} className="text-sm underline mt-2 inline-block">
+                  Start conversation →
+              </a>
             </div>
             {h.sample_images?.length ? (
               <div className="mt-3 flex gap-3">
