@@ -1,0 +1,1 @@
+# AIDEV-NOTE: Middleware package for FastAPI application

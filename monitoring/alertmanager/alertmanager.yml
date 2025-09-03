@@ -1,0 +1,145 @@
+# AIDEV-NOTE: 250903170019 AlertManager configuration for production alerting
+# Multi-channel notification system with escalation
+
+global:
+  smtp_smarthost: 'localhost:587'
+  smtp_from: 'alerts@kolplatform.com'
+  smtp_auth_username: '${SMTP_USERNAME}'
+  smtp_auth_password: '${SMTP_PASSWORD}'
+
+# AIDEV-NOTE: Inhibit rules to prevent alert spam
+inhibit_rules:
+  - source_match:
+      severity: 'critical'
+    target_match:
+      severity: 'warning'
+    equal: ['alertname', 'cluster', 'service']
+
+# AIDEV-NOTE: Route configuration with escalation
+route:
+  group_by: ['alertname', 'cluster', 'service']
+  group_wait: 10s
+  group_interval: 5m
+  repeat_interval: 12h
+  receiver: 'web.hook.default'
+  
+  routes:
+    # AIDEV-NOTE: Critical alerts - immediate notification
+    - match:
+        severity: critical
+      receiver: 'critical-alerts'
+      group_wait: 5s
+      repeat_interval: 5m
+      
+    # AIDEV-NOTE: Warning alerts - slower notification
+    - match:
+        severity: warning
+      receiver: 'warning-alerts'
+      group_wait: 30s
+      repeat_interval: 2h
+      
+    # AIDEV-NOTE: Business logic alerts
+    - match:
+        component: scraper
+      receiver: 'scraper-alerts'
+      
+    # AIDEV-NOTE: Infrastructure alerts
+    - match_re:
+        component: database|redis|system
+      receiver: 'infrastructure-alerts'
+
+# AIDEV-NOTE: Notification receivers
+receivers:
+  # AIDEV-NOTE: Default webhook receiver
+  - name: 'web.hook.default'
+    webhook_configs:
+      - url: '${ALERT_WEBHOOK_URL}'
+        send_resolved: true
+        http_config:
+          bearer_token: '${WEBHOOK_TOKEN}'
+        title: 'KOL Platform Alert'
+        text: |
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          {{ end }}
+
+  # AIDEV-NOTE: Critical alerts - multiple channels
+  - name: 'critical-alerts'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK}'
+        channel: '#critical-alerts'
+        title: '🚨 CRITICAL: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Severity:* {{ .Labels.severity }}
+          *Service:* {{ .Labels.component }}
+          *Time:* {{ .StartsAt.Format "2006-01-02 15:04:05" }}
+          {{ end }}
+        send_resolved: true
+        
+    # AIDEV-NOTE: Email for critical alerts
+    email_configs:
+      - to: 'oncall@kolplatform.com'
+        subject: '🚨 CRITICAL Alert: {{ .GroupLabels.alertname }}'
+        body: |
+          Critical alert triggered in KOL Platform:
+          
+          {{ range .Alerts }}
+          Alert: {{ .Annotations.summary }}
+          Description: {{ .Annotations.description }}
+          Severity: {{ .Labels.severity }}
+          Service: {{ .Labels.component }}
+          Time: {{ .StartsAt.Format "2006-01-02 15:04:05 MST" }}
+          {{ end }}
+          
+          Please investigate immediately.
+
+  # AIDEV-NOTE: Warning alerts - Slack only
+  - name: 'warning-alerts'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK}'
+        channel: '#alerts'
+        title: '⚠️ WARNING: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Service:* {{ .Labels.component }}
+          {{ end }}
+        send_resolved: true
+
+  # AIDEV-NOTE: Scraper-specific alerts
+  - name: 'scraper-alerts'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK}'
+        channel: '#scraper-alerts'
+        title: '🤖 Scraper Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Platform:* {{ .Labels.platform }}
+          {{ end }}
+        send_resolved: true
+
+  # AIDEV-NOTE: Infrastructure alerts
+  - name: 'infrastructure-alerts'
+    slack_configs:
+      - api_url: '${SLACK_WEBHOOK}'
+        channel: '#infrastructure'
+        title: '🏗️ Infrastructure Alert: {{ .GroupLabels.alertname }}'
+        text: |
+          {{ range .Alerts }}
+          *Alert:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Component:* {{ .Labels.component }}
+          {{ end }}
+        send_resolved: true
+
+# AIDEV-NOTE: Template definitions for reusable alert formats
+templates:
+  - '/etc/alertmanager/templates/*.tmpl'

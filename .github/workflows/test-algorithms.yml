@@ -1,0 +1,440 @@
+name: Algorithm Test Suite
+
+on:
+  push:
+    branches: [ master, develop ]
+  pull_request:
+    branches: [ master, develop ]
+  schedule:
+    # Run daily performance tests at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: 3.11
+  NODE_VERSION: 18
+  
+jobs:
+  # AIDEV-NOTE: Unit and Mathematical Validation Tests
+  unit-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        test-group: [scoring, constraints, optimization, integration]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Cache Python dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt', '**/pyproject.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install Python dependencies
+      working-directory: ./apps/api
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio pytest-cov pytest-mock psutil memory_profiler
+    
+    - name: Setup test environment
+      working-directory: ./apps/api
+      run: |
+        export PYTHONPATH="${PYTHONPATH}:$(pwd)/src"
+        export DATABASE_URL="sqlite:///test.db"
+        export REDIS_URL="redis://localhost:6379"
+    
+    - name: Run scoring algorithm tests
+      if: matrix.test-group == 'scoring'
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_scoring_algorithms_validation.py \
+               tests/test_kol_scorer.py \
+               -v --tb=short --cov=src/kol_api/services/scoring \
+               --cov-report=xml --cov-report=term-missing \
+               --durations=10
+    
+    - name: Run constraint filtering tests
+      if: matrix.test-group == 'constraints'
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_constraint_filtering_system.py \
+               -v --tb=short --cov=src/kol_api/services \
+               --cov-report=xml --cov-report=term-missing \
+               --durations=10
+    
+    - name: Run optimization algorithm tests
+      if: matrix.test-group == 'optimization'
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_budget_optimization_algorithms.py \
+               tests/test_enhanced_budget_optimizer.py \
+               -v --tb=short --cov=src/kol_api/services \
+               --cov-report=xml --cov-report=term-missing \
+               --durations=15
+    
+    - name: Run integration tests
+      if: matrix.test-group == 'integration'
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_integration_scoring_workflows.py \
+               tests/test_graphql_integration.py \
+               -v --tb=short --cov=src/kol_api \
+               --cov-report=xml --cov-report=term-missing \
+               --durations=20
+    
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./apps/api/coverage.xml
+        flags: ${{ matrix.test-group }}
+        name: ${{ matrix.test-group }}-coverage
+
+  # AIDEV-NOTE: Performance and Scalability Tests
+  performance-tests:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || contains(github.event.head_commit.message, '[perf-test]')
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install system dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y redis-server
+        redis-server --daemonize yes
+    
+    - name: Install Python dependencies
+      working-directory: ./apps/api
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio pytest-benchmark psutil memory_profiler matplotlib
+    
+    - name: Run performance benchmarks
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_performance_benchmarks.py \
+               -v --tb=short -m "performance and not slow" \
+               --durations=30 \
+               --benchmark-only \
+               --benchmark-json=performance_results.json
+    
+    - name: Run scalability tests
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_performance_benchmarks.py \
+               -v --tb=short -m "performance and slow" \
+               --durations=60 \
+               --maxfail=3
+    
+    - name: Generate performance report
+      working-directory: ./apps/api
+      run: |
+        python -c "
+        import json
+        import os
+        
+        if os.path.exists('performance_results.json'):
+            with open('performance_results.json') as f:
+                data = json.load(f)
+            
+            print('## Performance Test Results')
+            print('| Test | Time (s) | Memory (MB) | Status |')
+            print('|------|----------|-------------|--------|')
+            
+            for benchmark in data.get('benchmarks', []):
+                name = benchmark['name']
+                time_stats = benchmark['stats']
+                mean_time = time_stats['mean']
+                status = '✅ Pass' if mean_time < 5.0 else '⚠️ Slow'
+                print(f'| {name} | {mean_time:.3f} | N/A | {status} |')
+        "
+    
+    - name: Upload performance artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: performance-results
+        path: ./apps/api/performance_results.json
+        retention-days: 30
+
+  # AIDEV-NOTE: Algorithm Mathematical Validation
+  mathematical-validation:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies with numerical libraries
+      working-directory: ./apps/api
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio numpy scipy scikit-learn
+    
+    - name: Run mathematical property tests
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_scoring_algorithms_validation.py::TestScoringAlgorithmMathematicalProperties \
+               -v --tb=short \
+               --durations=15
+    
+    - name: Run edge case validation
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_scoring_algorithms_validation.py::TestScoringAlgorithmEdgeCases \
+               -v --tb=short \
+               --durations=10
+    
+    - name: Run statistical validation
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_scoring_algorithms_validation.py::TestScoringStatisticalValidation \
+               -v --tb=short \
+               --durations=20
+
+  # AIDEV-NOTE: Missing Data and Error Handling Tests
+  robustness-tests:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Install dependencies
+      working-directory: ./apps/api
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio pytest-mock
+    
+    - name: Run missing data tests
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_missing_data.py \
+               -v --tb=short -m "missing_data" \
+               --durations=10
+    
+    - name: Run error handling tests
+      working-directory: ./apps/api
+      run: |
+        pytest tests/ -k "error" -v --tb=short \
+               --durations=10
+    
+    - name: Run edge case tests
+      working-directory: ./apps/api
+      run: |
+        pytest tests/ -m "edge_case" -v --tb=short \
+               --durations=10
+
+  # AIDEV-NOTE: Cross-Service Integration Tests
+  cross-service-tests:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test_kol_platform
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: apps/web/package-lock.json
+    
+    - name: Install Python dependencies
+      working-directory: ./apps/api
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e .
+        pip install pytest pytest-asyncio asyncpg redis
+    
+    - name: Install Node.js dependencies
+      working-directory: ./apps/web
+      run: |
+        npm ci
+        npm run build
+    
+    - name: Set up environment variables
+      run: |
+        echo "DATABASE_URL=postgresql://postgres:postgres@localhost:5432/test_kol_platform" >> $GITHUB_ENV
+        echo "REDIS_URL=redis://localhost:6379" >> $GITHUB_ENV
+    
+    - name: Run database migrations
+      working-directory: ./apps/api
+      run: |
+        alembic upgrade head
+    
+    - name: Run GraphQL integration tests
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_graphql_integration.py \
+               -v --tb=short \
+               --durations=15
+    
+    - name: Run end-to-end workflow tests
+      working-directory: ./apps/api
+      run: |
+        pytest tests/test_integration_scoring_workflows.py \
+               -v --tb=short \
+               --durations=20
+
+  # AIDEV-NOTE: Test Results Summary and Quality Gates
+  test-summary:
+    runs-on: ubuntu-latest
+    needs: [unit-tests, mathematical-validation, robustness-tests]
+    if: always()
+    
+    steps:
+    - name: Download test artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: ./test-results
+    
+    - name: Generate test summary
+      run: |
+        echo "# Algorithm Test Suite Results" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Test Job Status" >> $GITHUB_STEP_SUMMARY
+        echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Unit Tests | ${{ needs.unit-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Mathematical Validation | ${{ needs.mathematical-validation.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Robustness Tests | ${{ needs.robustness-tests.result }} |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        
+        if [[ "${{ needs.unit-tests.result }}" == "success" && \
+              "${{ needs.mathematical-validation.result }}" == "success" && \
+              "${{ needs.robustness-tests.result }}" == "success" ]]; then
+          echo "✅ **All critical algorithm tests passed!**" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "❌ **Some critical tests failed. Review required before deployment.**" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "- Review any failing tests" >> $GITHUB_STEP_SUMMARY
+        echo "- Check performance benchmarks if scheduled" >> $GITHUB_STEP_SUMMARY
+        echo "- Verify algorithm mathematical properties" >> $GITHUB_STEP_SUMMARY
+        echo "- Ensure constraint filtering works correctly" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Check quality gates
+      run: |
+        UNIT_TESTS="${{ needs.unit-tests.result }}"
+        MATH_VALIDATION="${{ needs.mathematical-validation.result }}"
+        ROBUSTNESS="${{ needs.robustness-tests.result }}"
+        
+        if [[ "$UNIT_TESTS" != "success" || "$MATH_VALIDATION" != "success" || "$ROBUSTNESS" != "success" ]]; then
+          echo "Quality gates failed:"
+          echo "  Unit Tests: $UNIT_TESTS"
+          echo "  Mathematical Validation: $MATH_VALIDATION" 
+          echo "  Robustness Tests: $ROBUSTNESS"
+          exit 1
+        else
+          echo "All quality gates passed!"
+        fi
+
+  # AIDEV-NOTE: Performance Regression Detection
+  performance-regression:
+    runs-on: ubuntu-latest
+    needs: [performance-tests]
+    if: needs.performance-tests.result == 'success'
+    
+    steps:
+    - name: Download performance results
+      uses: actions/download-artifact@v3
+      with:
+        name: performance-results
+        path: ./performance
+    
+    - name: Check for performance regressions
+      run: |
+        python3 << 'EOF'
+        import json
+        import os
+        
+        # Load current results
+        with open('./performance/performance_results.json') as f:
+            current = json.load(f)
+        
+        # Define performance thresholds
+        thresholds = {
+            'single_kol_scoring': 2.0,       # 2 seconds max
+            'batch_scoring': 0.1,            # 100ms per KOL max
+            'genetic_algorithm': 30.0,       # 30 seconds max
+            'constraint_satisfaction': 10.0   # 10 seconds max
+        }
+        
+        regressions = []
+        
+        for benchmark in current.get('benchmarks', []):
+            name = benchmark['name']
+            mean_time = benchmark['stats']['mean']
+            
+            # Check against thresholds
+            for threshold_name, threshold_time in thresholds.items():
+                if threshold_name in name.lower():
+                    if mean_time > threshold_time:
+                        regressions.append(f"{name}: {mean_time:.3f}s > {threshold_time}s threshold")
+        
+        if regressions:
+            print("🚨 Performance regressions detected:")
+            for regression in regressions:
+                print(f"  - {regression}")
+            exit(1)
+        else:
+            print("✅ No performance regressions detected")
+        EOF

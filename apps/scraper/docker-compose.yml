@@ -1,0 +1,129 @@
+# AIDEV-NOTE: Docker Compose configuration for local development
+# Includes KOL scraper service with dependencies (PostgreSQL, Redis)
+
+version: '3.8'
+
+services:
+  # AIDEV-NOTE: Main KOL scraper service
+  kol-scraper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: kol-scraper
+    ports:
+      - "8080:8080"
+    environment:
+      - ENVIRONMENT=development
+      - PORT=8080
+      - DATABASE_URL=postgres://kol_user:kol_password@postgres:5432/kol_db?sslmode=disable
+      - REDIS_URL=redis://redis:6379
+      - LOG_LEVEL=info
+      - LOG_JSON=false
+      - MAX_CONCURRENT_SCRAPE=5
+      - RATE_LIMIT_RPS=1
+      - QUEUE_WORKERS=3
+      - TIKTOK_ENABLED=true
+      - TIKTOK_RATE_LIMIT_RPS=1
+      - AUTO_MIGRATE=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - kol-network
+    volumes:
+      - ./config:/home/scraper/config:ro
+      - ./logs:/home/scraper/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # AIDEV-NOTE: PostgreSQL database for KOL data storage
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: kol-postgres
+    environment:
+      - POSTGRES_DB=kol_db
+      - POSTGRES_USER=kol_user
+      - POSTGRES_PASSWORD=kol_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - kol-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kol_user -d kol_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # AIDEV-NOTE: Redis for job queue and caching
+  redis:
+    image: redis:7-alpine
+    container_name: kol-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - kol-network
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # AIDEV-NOTE: Optional monitoring with Grafana and Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kol-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - kol-network
+    profiles:
+      - monitoring
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kol-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin123
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+    networks:
+      - kol-network
+    profiles:
+      - monitoring
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  kol-network:
+    driver: bridge
+    name: kol-network

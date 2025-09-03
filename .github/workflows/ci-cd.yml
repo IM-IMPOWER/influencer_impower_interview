@@ -1,0 +1,390 @@
+# AIDEV-NOTE: 250903170012 Production CI/CD pipeline with comprehensive testing and deployment
+# Supports deployment to Vercel (frontend) and Railway (backend services)
+name: KOL Platform CI/CD
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+env:
+  # AIDEV-NOTE: Build and deployment configuration
+  REGISTRY: ghcr.io
+  GO_VERSION: '1.21'
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # AIDEV-NOTE: Code quality and security checks
+  lint-and-security:
+    name: Code Quality & Security
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          # Go dependencies
+          cd apps/scraper && go mod download
+          
+          # Node dependencies
+          cd ../../apps/web && npm ci
+          
+          # Python dependencies  
+          cd ../api && pip install -e .
+
+      - name: Run Go linting
+        uses: golangci/golangci-lint-action@v3
+        with:
+          version: latest
+          working-directory: apps/scraper
+          args: --timeout=5m
+
+      - name: Run TypeScript linting
+        run: |
+          cd apps/web
+          npm run lint
+
+      - name: Run Python linting
+        run: |
+          cd apps/api
+          pip install black flake8 mypy
+          black --check src/
+          flake8 src/
+          mypy src/ || true
+
+      - name: Security scan - Go
+        uses: securecodewarrior/github-action-add-sarif@v1
+        with:
+          sarif-file: 'gosec.sarif'
+        continue-on-error: true
+
+      - name: Security scan - Dependencies
+        run: |
+          # Audit npm packages
+          cd apps/web && npm audit --audit-level=high || true
+          
+          # Audit Python packages
+          cd ../api && pip-audit || true
+
+  # AIDEV-NOTE: Unit and integration tests
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    needs: lint-and-security
+    
+    services:
+      # AIDEV-NOTE: Test database
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_DB: kol_test
+          POSTGRES_USER: test_user
+          POSTGRES_PASSWORD: test_password
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+      # AIDEV-NOTE: Test Redis
+      redis:
+        image: redis:7-alpine
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install dependencies
+        run: |
+          cd apps/scraper && go mod download
+          cd ../../apps/web && npm ci
+          cd ../api && pip install -e .
+
+      - name: Run Go tests
+        run: |
+          cd apps/scraper
+          go test -v -race -coverprofile=coverage.out ./...
+          go tool cover -html=coverage.out -o coverage.html
+        env:
+          DATABASE_URL: postgres://test_user:test_password@localhost:5432/kol_test?sslmode=disable
+          REDIS_URL: redis://localhost:6379
+          ENVIRONMENT: test
+
+      - name: Run Python tests
+        run: |
+          cd apps/api
+          pytest --cov=kol_api --cov-report=xml --cov-report=html tests/
+        env:
+          DATABASE_URL: postgresql://test_user:test_password@localhost:5432/kol_test
+          REDIS_URL: redis://localhost:6379
+          ENVIRONMENT: test
+
+      - name: Run Next.js tests
+        run: |
+          cd apps/web
+          npm run test:ci
+        env:
+          NODE_ENV: test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./apps/scraper/coverage.out,./apps/api/coverage.xml
+          fail_ci_if_error: false
+
+  # AIDEV-NOTE: Build and push Docker images
+  build:
+    name: Build Images
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    strategy:
+      matrix:
+        service: [scraper, api]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=sha,prefix={{branch}}-
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/${{ matrix.service }}
+          file: ./apps/${{ matrix.service }}/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # AIDEV-NOTE: Deploy to staging environment  
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Railway (API)
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "environmentId": "${{ secrets.RAILWAY_STAGING_ENV_ID }}",
+              "serviceId": "${{ secrets.RAILWAY_API_SERVICE_ID }}",
+              "variables": {
+                "ENVIRONMENT": "staging",
+                "DATABASE_URL": "${{ secrets.STAGING_DATABASE_URL }}",
+                "REDIS_URL": "${{ secrets.STAGING_REDIS_URL }}",
+                "SECRET_KEY": "${{ secrets.STAGING_SECRET_KEY }}"
+              }
+            }' \
+            https://backboard.railway.app/v2/environments/${{ secrets.RAILWAY_STAGING_ENV_ID }}/deployments
+
+      - name: Deploy to Railway (Scraper)
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "environmentId": "${{ secrets.RAILWAY_STAGING_ENV_ID }}",
+              "serviceId": "${{ secrets.RAILWAY_SCRAPER_SERVICE_ID }}"
+            }' \
+            https://backboard.railway.app/v2/environments/${{ secrets.RAILWAY_STAGING_ENV_ID }}/deployments
+
+      - name: Deploy to Vercel (Web)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./apps/web
+          vercel-args: --prod --env NEXT_PUBLIC_API_URL=${{ secrets.STAGING_API_URL }}
+
+      - name: Run staging smoke tests
+        run: |
+          # Wait for deployment to be ready
+          sleep 60
+          
+          # Test API health
+          curl -f ${{ secrets.STAGING_API_URL }}/api/health || exit 1
+          
+          # Test web app health  
+          curl -f ${{ secrets.STAGING_WEB_URL }}/api/health || exit 1
+
+  # AIDEV-NOTE: Deploy to production environment
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [build, test]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Railway (API)
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "environmentId": "${{ secrets.RAILWAY_PROD_ENV_ID }}",
+              "serviceId": "${{ secrets.RAILWAY_API_SERVICE_ID }}",
+              "variables": {
+                "ENVIRONMENT": "production",
+                "DATABASE_URL": "${{ secrets.PROD_DATABASE_URL }}",
+                "REDIS_URL": "${{ secrets.PROD_REDIS_URL }}",
+                "SECRET_KEY": "${{ secrets.PROD_SECRET_KEY }}",
+                "CORS_ORIGINS": "${{ secrets.PROD_CORS_ORIGINS }}"
+              }
+            }' \
+            https://backboard.railway.app/v2/environments/${{ secrets.RAILWAY_PROD_ENV_ID }}/deployments
+
+      - name: Deploy to Railway (Scraper)
+        run: |
+          curl -X POST \
+            -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "environmentId": "${{ secrets.RAILWAY_PROD_ENV_ID }}",
+              "serviceId": "${{ secrets.RAILWAY_SCRAPER_SERVICE_ID }}"
+            }' \
+            https://backboard.railway.app/v2/environments/${{ secrets.RAILWAY_PROD_ENV_ID }}/deployments
+
+      - name: Deploy to Vercel (Web)
+        uses: amondnet/vercel-action@v25
+        with:
+          vercel-token: ${{ secrets.VERCEL_TOKEN }}
+          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
+          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
+          working-directory: ./apps/web
+          vercel-args: --prod --env NEXT_PUBLIC_API_URL=${{ secrets.PROD_API_URL }}
+
+      - name: Run production smoke tests
+        run: |
+          # Wait for deployment to be ready
+          sleep 90
+          
+          # Test API health
+          curl -f ${{ secrets.PROD_API_URL }}/api/health || exit 1
+          
+          # Test web app health
+          curl -f ${{ secrets.PROD_WEB_URL }}/api/health || exit 1
+
+      - name: Send deployment notification
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          channel: '#deployments'
+          webhook_url: ${{ secrets.SLACK_WEBHOOK }}
+          text: |
+            Production deployment ${{ job.status }}!
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+
+  # AIDEV-NOTE: Performance and security testing
+  post-deploy-tests:
+    name: Post-Deployment Tests
+    runs-on: ubuntu-latest
+    needs: [deploy-production]
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Load testing with Artillery
+        run: |
+          npm install -g artillery
+          artillery run tests/load/api-load-test.yml --target ${{ secrets.PROD_API_URL }}
+
+      - name: Security testing with OWASP ZAP
+        uses: zaproxy/action-full-scan@v0.7.0
+        with:
+          target: ${{ secrets.PROD_WEB_URL }}
+          rules_file_name: '.zap/rules.tsv'
+          cmd_options: '-a'
+
+      - name: Lighthouse CI for performance
+        uses: treosh/lighthouse-ci-action@v9
+        with:
+          urls: |
+            ${{ secrets.PROD_WEB_URL }}
+            ${{ secrets.PROD_WEB_URL }}/dashboard
+          uploadArtifacts: true
+          temporaryPublicStorage: true

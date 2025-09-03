@@ -1,0 +1,1 @@
+# AIDEV-NOTE: GraphQL resolvers package

@@ -1,0 +1,139 @@
+# AIDEV-NOTE: 250903170002 Production environment configuration
+# Optimized for performance, security, and observability
+
+# Server configuration
+environment: production
+debug: false
+log_level: info
+log_json: true
+
+# Database configuration (optimized for production)
+database:
+  max_connections: 50
+  max_idle_connections: 25
+  conn_max_lifetime: 1800
+  auto_migrate: false
+  migrations_path: ./migrations
+  query_timeout: 30s
+
+# Redis configuration (production optimized)
+redis:
+  db: 0
+  max_connections: 50
+  pool_timeout: 5s
+  idle_timeout: 300s
+
+# Scraping configuration (rate-limited for production)
+scraping:
+  user_agent: "KOL-Scraper/1.0 (+https://kolplatform.com/bot)"
+  request_timeout: 60s
+  max_concurrent_scrape: 20
+  rate_limit_rps: 5
+  retry_attempts: 5
+  retry_delay: 30s
+
+# Job queue configuration (high throughput)
+queue:
+  workers: 10
+  job_timeout: 1800s
+  max_queue_size: 5000
+  cleanup_interval: 3600s
+  batch_size: 100
+
+# Security (strict)
+cors:
+  allowed_origins: 
+    - "https://kolplatform.com"
+    - "https://www.kolplatform.com"
+    - "https://app.kolplatform.com"
+  allow_credentials: true
+
+security:
+  trusted_hosts:
+    - "kolplatform.com"
+    - "www.kolplatform.com"
+    - "app.kolplatform.com"
+  max_request_size: 104857600 # 100MB
+  request_timeout: 30s
+
+# Monitoring configuration (comprehensive)
+monitoring:
+  enabled: true
+  prometheus_port: 9090
+  grafana_port: 3000
+  health_check_interval: 10s
+  metrics_retention: 90d
+  alert_webhook: "${ALERT_WEBHOOK_URL}"
+  error_tracking: true
+  performance_tracking: true
+
+# Circuit breaker (production tuned)
+circuit_breaker:
+  enabled: true
+  max_requests: 20
+  interval: 120s
+  timeout: 60s
+  failure_threshold: 5
+
+# Performance settings (optimized)
+performance:
+  enable_query_cache: true
+  cache_default_ttl: 1800s
+  max_request_body_size: 52428800 # 50MB
+  enable_request_compression: true
+  connection_pooling: true
+  keep_alive_timeout: 75s
+
+# Rate limiting (strict)
+rate_limiting:
+  enabled: true
+  requests_per_minute: 5000
+  burst_size: 500
+  per_ip_limit: 100
+
+# Platform-specific settings
+platforms:
+  tiktok:
+    enabled: true
+    rate_limit_rps: 3
+    max_retries: 5
+    timeout: 120s
+    proxy_url: "${TIKTOK_PROXY_URL}"
+    session_rotation: true
+
+# Auto-scaling configuration
+scaling:
+  enabled: true
+  min_replicas: 2
+  max_replicas: 10
+  target_cpu_utilization: 70
+  target_memory_utilization: 80
+  scale_up_cooldown: 300s
+  scale_down_cooldown: 600s
+
+# Secrets (all from environment variables)
+secrets:
+  webhook_secret: "${WEBHOOK_SECRET}"
+  fastapi_api_key: "${FASTAPI_API_KEY}"
+  database_encryption_key: "${DB_ENCRYPTION_KEY}"
+  jwt_secret: "${JWT_SECRET_KEY}"
+  redis_password: "${REDIS_PASSWORD}"
+
+# Backup configuration
+backup:
+  enabled: true
+  schedule: "0 2 * * *" # Daily at 2 AM
+  retention_days: 30
+  s3_bucket: "${BACKUP_S3_BUCKET}"
+  encryption: true
+
+# Compliance and auditing
+audit:
+  enabled: true
+  log_level: detailed
+  sensitive_fields:
+    - password
+    - token
+    - secret
+    - api_key
+  retention_days: 365

@@ -1,0 +1,381 @@
+# AIDEV-NOTE: 250903170010 Production Docker Compose with full observability stack
+# LGTM stack (Loki, Grafana, Tempo, Mimir) for comprehensive monitoring
+version: '3.8'
+
+services:
+  # AIDEV-NOTE: KOL Scraper Service (Go microservice)
+  kol-scraper:
+    build:
+      context: ./apps/scraper
+      dockerfile: Dockerfile
+      target: production
+    container_name: kol-scraper-prod
+    restart: unless-stopped
+    ports:
+      - "${SCRAPER_PORT:-8080}:8080"
+      - "${SCRAPER_METRICS_PORT:-9091}:9091"
+    environment:
+      - ENVIRONMENT=production
+      - PORT=8080
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - LOG_JSON=true
+      - MAX_CONCURRENT_SCRAPE=${MAX_CONCURRENT_SCRAPE:-20}
+      - RATE_LIMIT_RPS=${RATE_LIMIT_RPS:-5}
+      - QUEUE_WORKERS=${QUEUE_WORKERS:-10}
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      - FASTAPI_URL=http://kol-api:8000
+      - MONITORING_ENABLED=true
+      - PROMETHEUS_PORT=9091
+      - ALERT_WEBHOOK=${ALERT_WEBHOOK_URL}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kol-network
+    volumes:
+      - ./config:/app/config:ro
+      - scraper_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/v1/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.5'
+
+  # AIDEV-NOTE: FastAPI Backend Service
+  kol-api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+      target: production
+    container_name: kol-api-prod
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      - ENVIRONMENT=production
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - SECRET_KEY=${JWT_SECRET_KEY}
+      - GO_SCRAPER_SERVICE_URL=http://kol-scraper:8080
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - DEBUG=false
+      - WORKERS=${API_WORKERS:-4}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - kol-network
+    volumes:
+      - api_uploads:/app/uploads
+      - api_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/api/health/ready"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '2.0'
+        reservations:
+          memory: 512M
+          cpus: '1.0'
+
+  # AIDEV-NOTE: Next.js Web Application
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      target: production
+    container_name: kol-web-prod
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+    depends_on:
+      - kol-api
+    networks:
+      - kol-network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '1.0'
+
+  # AIDEV-NOTE: PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: kol-postgres-prod
+    restart: unless-stopped
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-kol_platform}
+      - POSTGRES_USER=${POSTGRES_USER:-kol_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_INITDB_ARGS=--auth-host=scram-sha-256
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - postgres_backups:/backups
+      - ./apps/scraper/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    networks:
+      - kol-network
+    command: >
+      postgres
+        -c max_connections=200
+        -c shared_buffers=256MB
+        -c effective_cache_size=1GB
+        -c maintenance_work_mem=64MB
+        -c checkpoint_completion_target=0.9
+        -c wal_buffers=16MB
+        -c default_statistics_target=100
+        -c random_page_cost=1.1
+        -c effective_io_concurrency=200
+        -c log_statement=mod
+        -c log_duration=on
+        -c log_line_prefix='%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h '
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kol_user} -d ${POSTGRES_DB:-kol_platform}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+
+  # AIDEV-NOTE: Redis with persistence and optimization
+  redis:
+    image: redis:7.2-alpine
+    container_name: kol-redis-prod
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+      - ./config/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    networks:
+      - kol-network
+    command: >
+      redis-server /usr/local/etc/redis/redis.conf
+        --requirepass ${REDIS_PASSWORD}
+        --appendonly yes
+        --maxmemory 512mb
+        --maxmemory-policy allkeys-lru
+        --save 900 1
+        --save 300 10
+        --save 60 10000
+    healthcheck:
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # AIDEV-NOTE: Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: kol-prometheus-prod
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
+      - prometheus_data:/prometheus
+    networks:
+      - kol-network
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+      - '--storage.tsdb.retention.time=90d'
+      - '--storage.tsdb.retention.size=50GB'
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '1.0'
+
+  # AIDEV-NOTE: Grafana for visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: kol-grafana-prod
+    restart: unless-stopped
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_INSTALL_PLUGINS=redis-datasource,postgres-datasource
+      - GF_FEATURE_TOGGLES_ENABLE=ngalert
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - kol-network
+    depends_on:
+      - prometheus
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # AIDEV-NOTE: Loki for log aggregation
+  loki:
+    image: grafana/loki:latest
+    container_name: kol-loki-prod
+    restart: unless-stopped
+    ports:
+      - "${LOKI_PORT:-3100}:3100"
+    volumes:
+      - ./monitoring/loki/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    networks:
+      - kol-network
+    command: -config.file=/etc/loki/local-config.yaml
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+  # AIDEV-NOTE: Promtail for log collection
+  promtail:
+    image: grafana/promtail:latest
+    container_name: kol-promtail-prod
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/promtail/promtail.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - scraper_logs:/var/log/kol-scraper:ro
+      - api_logs:/var/log/kol-api:ro
+    networks:
+      - kol-network
+    depends_on:
+      - loki
+    command: -config.file=/etc/promtail/config.yml
+
+  # AIDEV-NOTE: AlertManager for alerting
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: kol-alertmanager-prod
+    restart: unless-stopped
+    ports:
+      - "${ALERTMANAGER_PORT:-9093}:9093"
+    volumes:
+      - ./monitoring/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    networks:
+      - kol-network
+    command:
+      - '--config.file=/etc/alertmanager/alertmanager.yml'
+      - '--storage.path=/alertmanager'
+      - '--web.external-url=http://localhost:9093'
+
+  # AIDEV-NOTE: Node Exporter for system metrics
+  node-exporter:
+    image: prom/node-exporter:latest
+    container_name: kol-node-exporter-prod
+    restart: unless-stopped
+    ports:
+      - "${NODE_EXPORTER_PORT:-9100}:9100"
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    networks:
+      - kol-network
+    command:
+      - '--path.procfs=/host/proc'
+      - '--path.rootfs=/rootfs'
+      - '--path.sysfs=/host/sys'
+      - '--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)'
+
+  # AIDEV-NOTE: cadvisor for container metrics  
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: kol-cadvisor-prod
+    restart: unless-stopped
+    ports:
+      - "${CADVISOR_PORT:-8080}:8080"
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    networks:
+      - kol-network
+    privileged: true
+    devices:
+      - /dev/kmsg
+
+volumes:
+  # AIDEV-NOTE: Data volumes for persistence
+  postgres_data:
+    driver: local
+  postgres_backups:
+    driver: local
+  redis_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+  loki_data:
+    driver: local
+  alertmanager_data:
+    driver: local
+  
+  # AIDEV-NOTE: Application data volumes
+  scraper_logs:
+    driver: local
+  api_logs:
+    driver: local
+  api_uploads:
+    driver: local
+
+networks:
+  kol-network:
+    driver: bridge
+    name: kol-production-network

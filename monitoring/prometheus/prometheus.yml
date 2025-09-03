@@ -1,0 +1,122 @@
+# AIDEV-NOTE: 250903170013 Prometheus configuration for KOL platform monitoring
+# Comprehensive metrics collection from all services
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'kol-platform'
+    environment: '${ENVIRONMENT:-production}'
+
+# AIDEV-NOTE: Rule files for alerting
+rule_files:
+  - "alerts.yml"
+
+# AIDEV-NOTE: Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
+
+# AIDEV-NOTE: Scrape configurations for all services
+scrape_configs:
+  # AIDEV-NOTE: Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    scrape_interval: 5s
+
+  # AIDEV-NOTE: KOL Scraper service (Go microservice)
+  - job_name: 'kol-scraper'
+    static_configs:
+      - targets: ['kol-scraper:9091']
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    scrape_timeout: 5s
+    honor_labels: true
+    params:
+      format: ['prometheus']
+
+  # AIDEV-NOTE: FastAPI backend service
+  - job_name: 'kol-api'
+    static_configs:
+      - targets: ['kol-api:8000']
+    scrape_interval: 10s
+    metrics_path: '/metrics'
+    scrape_timeout: 5s
+
+  # AIDEV-NOTE: PostgreSQL database metrics
+  - job_name: 'postgres'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    scrape_interval: 15s
+
+  # AIDEV-NOTE: Redis metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 15s
+
+  # AIDEV-NOTE: System metrics
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+    scrape_interval: 15s
+
+  # AIDEV-NOTE: Container metrics
+  - job_name: 'cadvisor'
+    static_configs:
+      - targets: ['cadvisor:8080']
+    scrape_interval: 15s
+    metrics_path: '/metrics'
+
+  # AIDEV-NOTE: Next.js web application (if metrics endpoint exists)
+  - job_name: 'web'
+    static_configs:
+      - targets: ['web:3000']
+    scrape_interval: 30s
+    metrics_path: '/api/metrics'
+    scrape_timeout: 10s
+
+  # AIDEV-NOTE: Blackbox monitoring for external services
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+        - http://kol-scraper:8080/api/v1/health
+        - http://kol-api:8000/api/health
+        - http://web:3000
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # AIDEV-NOTE: Custom business metrics from applications
+  - job_name: 'kol-business-metrics'
+    static_configs:
+      - targets: ['kol-scraper:8080']
+    scrape_interval: 30s
+    metrics_path: '/api/v1/metrics/business'
+    scrape_timeout: 10s
+    honor_labels: true
+
+# AIDEV-NOTE: Remote write configuration for long-term storage (optional)
+# Uncomment if using external time series database
+# remote_write:
+#   - url: "https://prometheus-us-central1.grafana.net/api/prom/push"
+#     basic_auth:
+#       username: "${GRAFANA_CLOUD_USER}"
+#       password: "${GRAFANA_CLOUD_API_KEY}"
+
+# AIDEV-NOTE: Storage configuration
+storage:
+  tsdb:
+    retention.time: 90d
+    retention.size: 50GB
+    wal-compression: true

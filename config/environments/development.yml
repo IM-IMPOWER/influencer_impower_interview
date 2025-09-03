@@ -1,0 +1,78 @@
+# AIDEV-NOTE: 250903170000 Development environment configuration
+# Local development settings with debug features enabled
+
+# Server configuration
+environment: development
+debug: true
+log_level: debug
+log_json: false
+
+# Database configuration
+database:
+  max_connections: 10
+  max_idle_connections: 5
+  conn_max_lifetime: 300
+  auto_migrate: true
+  migrations_path: ./migrations
+
+# Redis configuration  
+redis:
+  url: redis://localhost:6379
+  db: 0
+  max_connections: 10
+
+# Scraping configuration
+scraping:
+  user_agent: "KOL-Scraper/1.0-dev (+https://example.com/bot)"
+  request_timeout: 30s
+  max_concurrent_scrape: 5
+  rate_limit_rps: 2
+  retry_attempts: 3
+  retry_delay: 5s
+
+# Job queue configuration
+queue:
+  workers: 3
+  job_timeout: 300s
+  max_queue_size: 500
+  cleanup_interval: 1800s
+
+# Security (relaxed for development)
+cors:
+  allowed_origins: 
+    - "http://localhost:3000"
+    - "http://localhost:3001"
+    - "http://127.0.0.1:3000"
+    - "http://127.0.0.1:3001"
+  allow_credentials: true
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  prometheus_port: 9090
+  grafana_port: 3000
+  health_check_interval: 30s
+  metrics_retention: 7d
+
+# Circuit breaker (disabled for development)
+circuit_breaker:
+  enabled: false
+  max_requests: 10
+  interval: 60s
+  timeout: 30s
+
+# Performance settings
+performance:
+  enable_query_cache: true
+  cache_default_ttl: 300s
+  max_request_body_size: 10485760 # 10MB
+  enable_request_compression: false
+
+# Platform-specific settings
+platforms:
+  tiktok:
+    enabled: true
+    rate_limit_rps: 1
+    max_retries: 3
+    timeout: 60s
+    proxy_url: ""
