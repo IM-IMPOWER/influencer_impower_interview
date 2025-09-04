@@ -27,6 +27,7 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
     volumes:
       - ./api:/app
+      - ./data/split_images:/data/split_images:ro
     ports:
       - "8000:8000"
     depends_on:
