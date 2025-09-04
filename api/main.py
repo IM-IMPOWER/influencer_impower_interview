@@ -3,6 +3,7 @@ from routes_kols import router as kols_router
 from routes_match import router as match_router
 from routes_media import router as media_router
 from routes_crm import router as crm_router
+from routes_plan import router as plan_router
 
 
 
@@ -13,6 +14,7 @@ app.include_router(kols_router)
 app.include_router(match_router)
 app.include_router(media_router)
 app.include_router(crm_router)
+app.include_router(plan_router)
 
 @app.get("/health")
 def health():
