@@ -1,0 +1,203 @@
+# AIDEV-NOTE: 250903170014 Prometheus alerting rules for KOL platform
+# Production-ready alerts for system and business metrics
+
+groups:
+  # AIDEV-NOTE: System-level alerts
+  - name: system_alerts
+    interval: 30s
+    rules:
+      - alert: HighMemoryUsage
+        expr: (node_memory_MemTotal_bytes - node_memory_MemAvailable_bytes) / node_memory_MemTotal_bytes * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High memory usage detected"
+          description: "Memory usage is above 85% for more than 5 minutes. Current value: {{ $value }}%"
+
+      - alert: HighCPUUsage
+        expr: 100 - (avg(rate(node_cpu_seconds_total{mode="idle"}[5m])) * 100) > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: system
+        annotations:
+          summary: "High CPU usage detected"
+          description: "CPU usage is above 80% for more than 5 minutes. Current value: {{ $value }}%"
+
+      - alert: DiskSpaceLow
+        expr: (node_filesystem_avail_bytes{mountpoint="/"} / node_filesystem_size_bytes{mountpoint="/"}) * 100 < 15
+        for: 2m
+        labels:
+          severity: critical
+          component: system
+        annotations:
+          summary: "Low disk space"
+          description: "Disk space is below 15%. Current value: {{ $value }}%"
+
+      - alert: ServiceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: "{{ $labels.job }}"
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "Service {{ $labels.job }} has been down for more than 1 minute"
+
+  # AIDEV-NOTE: Application-level alerts
+  - name: application_alerts
+    interval: 30s
+    rules:
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status_code=~"5.."}[5m]) / rate(http_requests_total[5m]) * 100 > 5
+        for: 3m
+        labels:
+          severity: critical
+          component: "{{ $labels.job }}"
+        annotations:
+          summary: "High error rate in {{ $labels.job }}"
+          description: "Error rate is above 5% for more than 3 minutes. Current value: {{ $value }}%"
+
+      - alert: HighResponseTime
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: "{{ $labels.job }}"
+        annotations:
+          summary: "High response time in {{ $labels.job }}"
+          description: "95th percentile response time is above 2 seconds. Current value: {{ $value }}s"
+
+      - alert: DatabaseConnectionsHigh
+        expr: db_connections_active / db_connections_max * 100 > 80
+        for: 2m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "High database connection usage"
+          description: "Database connection usage is above 80%. Current value: {{ $value }}%"
+
+  # AIDEV-NOTE: Business logic alerts specific to KOL platform
+  - name: kol_business_alerts
+    interval: 60s
+    rules:
+      - alert: ScrapingJobsStuck
+        expr: active_scraping_jobs > 0 and rate(scraping_jobs_total[10m]) == 0
+        for: 10m
+        labels:
+          severity: warning
+          component: scraper
+        annotations:
+          summary: "Scraping jobs appear to be stuck"
+          description: "There are {{ $value }} active scraping jobs but no completed jobs in the last 10 minutes"
+
+      - alert: QueueSizeGrowing
+        expr: increase(job_queue_size[30m]) > 100
+        for: 5m
+        labels:
+          severity: warning
+          component: queue
+        annotations:
+          summary: "Job queue size is growing rapidly"
+          description: "Job queue has grown by {{ $value }} jobs in the last 30 minutes"
+
+      - alert: HighScrapingErrorRate
+        expr: rate(scraping_errors_total[10m]) / rate(scraping_jobs_total[10m]) * 100 > 10
+        for: 5m
+        labels:
+          severity: critical
+          component: scraper
+        annotations:
+          summary: "High scraping error rate"
+          description: "Scraping error rate is above 10% for {{ $labels.platform }}. Current value: {{ $value }}%"
+
+      - alert: CircuitBreakerOpen
+        expr: circuit_breaker_state == 1
+        for: 1m
+        labels:
+          severity: warning
+          component: "{{ $labels.name }}"
+        annotations:
+          summary: "Circuit breaker {{ $labels.name }} is open"
+          description: "Circuit breaker {{ $labels.name }} has been open for more than 1 minute"
+
+  # AIDEV-NOTE: Infrastructure alerts
+  - name: infrastructure_alerts
+    interval: 30s
+    rules:
+      - alert: PostgreSQLDown
+        expr: pg_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: postgresql
+        annotations:
+          summary: "PostgreSQL is down"
+          description: "PostgreSQL database is not responding"
+
+      - alert: RedisDown
+        expr: redis_up == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: redis
+        annotations:
+          summary: "Redis is down"
+          description: "Redis server is not responding"
+
+      - alert: ContainerRestarts
+        expr: increase(container_start_time_seconds[1h]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          component: "{{ $labels.name }}"
+        annotations:
+          summary: "Container {{ $labels.name }} restarting frequently"
+          description: "Container {{ $labels.name }} has restarted {{ $value }} times in the last hour"
+
+      - alert: ContainerMemoryUsageHigh
+        expr: (container_memory_usage_bytes / container_spec_memory_limit_bytes) * 100 > 90
+        for: 5m
+        labels:
+          severity: warning
+          component: "{{ $labels.name }}"
+        annotations:
+          summary: "High memory usage in container {{ $labels.name }}"
+          description: "Container {{ $labels.name }} memory usage is above 90%. Current value: {{ $value }}%"
+
+  # AIDEV-NOTE: Performance alerts
+  - name: performance_alerts
+    interval: 60s
+    rules:
+      - alert: HighGoroutineCount
+        expr: goroutines_count > 5000
+        for: 5m
+        labels:
+          severity: warning
+          component: "{{ $labels.job }}"
+        annotations:
+          summary: "High goroutine count in {{ $labels.job }}"
+          description: "Goroutine count is {{ $value }}, which may indicate a goroutine leak"
+
+      - alert: DatabaseSlowQueries
+        expr: histogram_quantile(0.95, rate(db_query_duration_seconds_bucket[5m])) > 1
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Slow database queries detected"
+          description: "95th percentile database query time is {{ $value }} seconds for operation {{ $labels.operation }}"
+
+      - alert: APIRateLimitHit
+        expr: rate(http_requests_total{status_code="429"}[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: info
+          component: api
+        annotations:
+          summary: "API rate limit being hit frequently"
+          description: "API rate limit (429 responses) rate is {{ $value }} per second"

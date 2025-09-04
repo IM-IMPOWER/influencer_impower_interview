@@ -1,0 +1,66 @@
+# AIDEV-NOTE: Example configuration file for KOL scraper service
+# Copy this file to config.yaml and modify as needed
+
+# Server configuration
+environment: development
+port: 8080
+read_timeout: 30
+write_timeout: 30
+idle_timeout: 120
+
+# Database configuration
+# database_url: postgres://kol_user:kol_password@localhost:5432/kol_db?sslmode=disable
+max_db_connections: 25
+max_idle_db_connections: 5
+db_conn_max_lifetime: 300
+auto_migrate: false
+migrations_path: "./migrations"
+
+# Redis configuration
+# redis_url: redis://localhost:6379
+redis_password: ""
+redis_db: 0
+
+# Scraping configuration
+user_agent: "KOL-Scraper/1.0 (+https://example.com/bot)"
+request_timeout: 30s
+max_concurrent_scrape: 10
+rate_limit_rps: 2
+retry_attempts: 3
+retry_delay: 5s
+
+# Job queue configuration
+queue_workers: 5
+job_timeout: 300s
+max_queue_size: 1000
+cleanup_interval: 3600s
+
+# Logging configuration
+log_level: info
+log_json: false
+
+# Integration configuration
+# fastapi_url: http://localhost:8000
+# webhook_secret: your-webhook-secret-here
+api_timeout: 30
+
+# TikTok specific configuration
+tiktok:
+  enabled: true
+  rate_limit_rps: 1
+  proxy_url: ""
+  session_cookie: ""
+  max_retries: 3
+  timeout: 60s
+
+# Instagram configuration (future)
+# instagram:
+#   enabled: false
+#   rate_limit_rps: 1
+#   api_key: ""
+
+# YouTube configuration (future)
+# youtube:
+#   enabled: false
+#   api_key: ""
+#   rate_limit_rps: 100

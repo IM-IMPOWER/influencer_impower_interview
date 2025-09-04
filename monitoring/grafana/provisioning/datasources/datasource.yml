@@ -1,0 +1,63 @@
+# AIDEV-NOTE: 250903170016 Grafana datasource provisioning configuration
+# Automatically configure data sources on startup
+
+apiVersion: 1
+
+datasources:
+  # AIDEV-NOTE: Prometheus for metrics
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true
+    basicAuth: false
+    jsonData:
+      httpMethod: POST
+      queryTimeout: 60s
+      timeInterval: 15s
+
+  # AIDEV-NOTE: Loki for logs
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    editable: true
+    basicAuth: false
+    jsonData:
+      maxLines: 1000
+      derivedFields:
+        - name: TraceID
+          matcherRegex: "trace_id=([\\w]+)"
+          url: "http://localhost:16686/trace/${__value.raw}"
+          datasourceUid: tempo
+
+  # AIDEV-NOTE: PostgreSQL for direct database queries
+  - name: PostgreSQL
+    type: postgres
+    access: proxy
+    url: postgres:5432
+    user: ${POSTGRES_USER}
+    database: ${POSTGRES_DB}
+    editable: true
+    basicAuth: false
+    secureJsonData:
+      password: ${POSTGRES_PASSWORD}
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+
+  # AIDEV-NOTE: Redis datasource for cache metrics
+  - name: Redis
+    type: redis-datasource
+    access: proxy
+    url: redis://redis:6379
+    editable: true
+    basicAuth: false
+    jsonData:
+      client: standalone
+      poolSize: 5
+      timeout: 10
+      pingInterval: 0
+      pipelineWindow: 0

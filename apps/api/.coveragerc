@@ -1,0 +1,204 @@
+[run]
+# AIDEV-NOTE: Coverage configuration for KOL platform algorithm testing
+
+# Source directory to measure
+source = src/kol_api
+
+# Branch coverage (more detailed than line coverage)
+branch = True
+
+# Parallel processing support
+parallel = True
+
+# Files to include in coverage
+include = 
+    src/kol_api/services/scoring/*
+    src/kol_api/services/enhanced_budget_optimizer.py
+    src/kol_api/services/kol_matching.py
+    src/kol_api/services/models.py
+    src/kol_api/graphql/resolvers/*
+    src/kol_api/database/models/*
+
+# Files to exclude from coverage
+omit = 
+    */tests/*
+    */test_*
+    */__pycache__/*
+    */migrations/*
+    */alembic/*
+    setup.py
+    conftest.py
+    */fixtures/*
+    */mock_*
+    */dev_*
+    */.venv/*
+    */venv/*
+    */node_modules/*
+
+# Ignore errors when source files are missing
+ignore_errors = True
+
+# Data file for parallel processing
+data_file = .coverage
+
+[report]
+# Reporting options
+
+# Don't include lines that are defensive and shouldn't be tested
+exclude_lines =
+    # Have to re-enable the standard pragma
+    pragma: no cover
+    
+    # Don't complain about missing debug-only code:
+    def __repr__
+    if self\.debug
+    
+    # Don't complain if tests don't hit defensive assertion code:
+    raise AssertionError
+    raise NotImplementedError
+    raise ValueError(".*not supported.*")
+    raise ValueError(".*not implemented.*")
+    
+    # Don't complain if non-runnable code isn't run:
+    if 0:
+    if False:
+    if __name__ == .__main__.:
+    
+    # Don't complain about abstract methods
+    @(abc\.)?abstractmethod
+    
+    # Skip type checking blocks
+    if TYPE_CHECKING:
+    
+    # Skip platform specific code
+    if sys.platform
+    if platform.system
+    
+    # Skip development/debugging code
+    if DEBUG:
+    if DEVELOPMENT:
+    
+    # Skip error handling for external dependencies
+    except ImportError:
+    except ModuleNotFoundError:
+    
+    # Skip logging statements
+    logger\.debug
+    logger\.info
+    print\(.*\)
+    
+    # Skip performance monitoring code
+    @memory_profiler
+    @profile
+
+# Show missing lines in report
+show_missing = True
+
+# Sort coverage report by coverage percentage
+sort = Cover
+
+# Minimum coverage percentage to pass
+fail_under = 80
+
+# Precision for percentages
+precision = 2
+
+# Skip covered files in report
+skip_covered = False
+
+# Skip empty files
+skip_empty = False
+
+[html]
+# HTML coverage report configuration
+directory = htmlcov
+title = KOL Platform Algorithm Coverage Report
+
+# Include source code in HTML report
+show_contexts = True
+
+# Extra CSS for better HTML reports
+extra_css = tests/fixtures/coverage.css
+
+[xml]
+# XML coverage report for CI/CD
+output = coverage.xml
+
+[json]
+# JSON coverage report for programmatic access
+output = coverage.json
+pretty_print = True
+show_contexts = True
+
+# Coverage targets per module
+[coverage:paths]
+# Map different source paths to the same module
+source =
+    src/kol_api
+    */site-packages/kol_api
+    */lib/python*/site-packages/kol_api
+
+# Module-specific coverage requirements
+[coverage:run:plugins]
+# Coverage plugins for specific frameworks
+# django_coverage_plugin for Django
+# pytest_cov for pytest integration
+
+[coverage:report:include]
+# High-priority modules requiring >85% coverage
+scoring_algorithms = 
+    src/kol_api/services/scoring/kol_scorer.py
+    src/kol_api/services/scoring/score_components.py
+
+# Medium-priority modules requiring >80% coverage  
+optimization_algorithms =
+    src/kol_api/services/enhanced_budget_optimizer.py
+    src/kol_api/services/constraint_satisfaction.py
+
+# Integration modules requiring >75% coverage
+integration_services =
+    src/kol_api/services/kol_matching.py
+    src/kol_api/graphql/resolvers/scoring_resolvers.py
+    src/kol_api/graphql/resolvers/budget_resolvers.py
+
+[coverage:report:exclude_lines]
+# Additional patterns to exclude from coverage
+# These are context-specific exclusions
+
+# Algorithm-specific exclusions
+def _debug_*
+def _profile_*
+def _benchmark_*
+
+# Error handling we don't want to test
+except (TimeoutError, asyncio.TimeoutError):
+except redis.RedisError:
+except sqlalchemy.exc.*:
+
+# Development utilities
+if typing.TYPE_CHECKING:
+if __debug__:
+
+# Platform-specific code
+if sys.version_info
+if platform.python_version
+
+# Complex mathematical edge cases that are hard to trigger
+if abs(.*) < 1e-10:
+if math.isnan
+if math.isinf
+
+# Fallback code for missing optional dependencies
+try:.*matplotlib
+try:.*scipy
+try:.*sklearn
+except ImportError:.*optional
+
+# Performance measurement code
+@functools.lru_cache
+@memory_profiler.profile
+time.perf_counter()
+
+# Logging and monitoring
+structlog.*
+prometheus_client.*

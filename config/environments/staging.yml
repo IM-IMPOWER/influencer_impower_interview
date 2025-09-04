@@ -1,0 +1,88 @@
+# AIDEV-NOTE: 250903170001 Staging environment configuration  
+# Pre-production testing environment with production-like settings
+
+# Server configuration
+environment: staging
+debug: false
+log_level: info
+log_json: true
+
+# Database configuration
+database:
+  max_connections: 20
+  max_idle_connections: 10
+  conn_max_lifetime: 600
+  auto_migrate: false
+  migrations_path: ./migrations
+
+# Redis configuration
+redis:
+  db: 0
+  max_connections: 20
+
+# Scraping configuration
+scraping:
+  user_agent: "KOL-Scraper/1.0-staging (+https://staging.example.com/bot)"
+  request_timeout: 45s
+  max_concurrent_scrape: 8
+  rate_limit_rps: 3
+  retry_attempts: 3
+  retry_delay: 10s
+
+# Job queue configuration
+queue:
+  workers: 5
+  job_timeout: 600s
+  max_queue_size: 1000
+  cleanup_interval: 3600s
+
+# Security (moderate)
+cors:
+  allowed_origins: 
+    - "https://staging.kolplatform.com"
+    - "https://staging-web.kolplatform.com"
+  allow_credentials: true
+
+# Monitoring configuration
+monitoring:
+  enabled: true
+  prometheus_port: 9090
+  grafana_port: 3000
+  health_check_interval: 15s
+  metrics_retention: 30d
+  alert_webhook: "${ALERT_WEBHOOK_URL}"
+
+# Circuit breaker (enabled)
+circuit_breaker:
+  enabled: true
+  max_requests: 10
+  interval: 60s
+  timeout: 30s
+
+# Performance settings
+performance:
+  enable_query_cache: true
+  cache_default_ttl: 600s
+  max_request_body_size: 20971520 # 20MB
+  enable_request_compression: true
+
+# Rate limiting
+rate_limiting:
+  enabled: true
+  requests_per_minute: 1000
+  burst_size: 100
+
+# Platform-specific settings
+platforms:
+  tiktok:
+    enabled: true
+    rate_limit_rps: 2
+    max_retries: 5
+    timeout: 90s
+    proxy_url: "${TIKTOK_PROXY_URL}"
+
+# Secrets (environment variables)
+secrets:
+  webhook_secret: "${WEBHOOK_SECRET}"
+  fastapi_api_key: "${FASTAPI_API_KEY}"
+  database_encryption_key: "${DB_ENCRYPTION_KEY}"

@@ -1,0 +1,1 @@
+# AIDEV-NOTE: GraphQL package for KOL platform API
